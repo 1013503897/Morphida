@@ -197,19 +197,23 @@ jobs:
 
       - name: package
         run: |
-          gzip -k build-android-arm64/subprojects/frida-core/server/frida-server
-          ls -la build-android-arm64/subprojects/frida-core/server/
+          ver="${{ needs.check.outputs.frida_version }}"
+          src="build-android-arm64/subprojects/frida-core/server/frida-server"
+          dst="frida-server-$ver-android-arm64"
+          cp "$src" "$dst"
+          gzip "$dst"
+          ls -la "$dst.gz"
 
       - name: upload release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${{ needs.check.outputs.build_tag }}"
-          asset="build-android-arm64/subprojects/frida-core/server/frida-server.gz"
-          asset_name="frida-server-${{ needs.check.outputs.frida_version }}-android-arm64.gz"
+          ver="${{ needs.check.outputs.frida_version }}"
+          asset="frida-server-$ver-android-arm64.gz"
 
           notes=$(cat <<EOF
-          frida ${{ needs.check.outputs.frida_version }} + per-build randomized strings.
+          frida $ver + per-build randomized strings.
 
           - prgname:    \`$PRG\`
           - memfd:      \`$MEMFD\`
@@ -226,4 +230,4 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "$tag" \
             --notes "$notes" \
-            "$asset#$asset_name"
+            "$asset"
