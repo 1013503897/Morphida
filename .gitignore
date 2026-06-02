@@ -1,3 +1,5 @@
 .DS_Store
 build/
 *.gz
+__pycache__/
+*.pyc
