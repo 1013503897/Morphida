@@ -48,9 +48,9 @@ SIG_TOKENS = [
     "frida", "Frida", "FRIDA", "frida:rpc", "re.frida",
     "frida-agent", "gum-js-loop", "gmain", "gdbus", "gum_",
 ]
-# these MUST be 0 after a patch — they are unambiguous, always-in-.rodata
-# signatures; a survivor fails the build.
-HARD_ZERO = ["frida:rpc", "gum-js-loop"]
+# MUST be 0 after a patch; a survivor fails the build. (frida:rpc is intentionally
+# NOT here — its runtime value must stay "frida:rpc" for stock-client RPC compat.)
+HARD_ZERO = ["gum-js-loop"]
 
 
 def _lief():
@@ -92,14 +92,19 @@ def _dex_ranges(path):
     return ranges
 
 
-# lowercase "frida", EXCEPT when it is part of an identifier/path *token* — i.e.
-# followed by "-" or "_", or in the "re/frida" / "re.frida" package paths. Those
-# are names the server resolves by string against an embedded blob / the DEX /
-# the filesystem (frida_agent_main, frida_zymbiote_replacement_*, /frida-zymbiote-,
-# /data/local/tmp/frida-helper-, re/frida/HelperBackend, ...) and must stay
-# matched on both sides. Free-form "frida" (frida:rpc, libfrida, bare frida) and
-# "Frida"/"FRIDA" GType names still rename — that is the bulk of the signature.
-_FRIDA_RE = re.compile(rb"(?<!re/)(?<!re\.)frida(?![-_])")
+# lowercase "frida", EXCEPT when it is part of a token whose runtime value must
+# stay byte-identical because it is matched by string against something we do not
+# rename in lockstep:
+#   * "frida" followed by "-"/"_"  -> identifier/path tokens the server resolves
+#     by name in embedded blobs / the DEX / the filesystem (frida_agent_main,
+#     frida_zymbiote_replacement_*, /frida-zymbiote-, /data/local/tmp/frida-helper-,
+#     frida-android-helper, ...).
+#   * "frida:" (i.e. "frida:rpc")  -> the agent<->client RPC wire tag. The stock
+#     frida client sends the literal "frida:rpc", so the agent must keep it too.
+#   * "re/frida" / "re.frida"      -> the helper DEX class path + filesystem.
+# Free-form "frida" (libfrida, bare frida) and "Frida"/"FRIDA" GType/JS names
+# still rename — that is the bulk of the static signature.
+_FRIDA_RE = re.compile(rb"(?<!re/)(?<!re\.)frida(?![-_:])")
 
 
 def _string_ranges(path):
