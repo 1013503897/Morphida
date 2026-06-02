@@ -1,7 +1,10 @@
-# Florida (standalone)
+# Morphida
+
+> *Polymorphic, anti-detection Frida — formerly "Florida (standalone)".*
 
 Automatically tracks **FRIDA** upstream releases and builds an anti-detection
-version of `frida-server` for Android (arm64).
+version of `frida-server` for Android (arm64). Every build *morphs* its giveaway
+symbols and strings, so no two server binaries share the same static fingerprint.
 
 跟随 **FRIDA** 上游正式 release，自动修补并为 Android (arm64) 构建反检测版
 `frida-server`。
@@ -16,7 +19,7 @@ version of `frida-server` for Android (arm64).
 
 ## Download
 
-[Latest Release](https://github.com/1013503897/Florida/releases/latest)
+[Latest Release](https://github.com/1013503897/Morphida/releases/latest)
 
 Each release asset is named `frida-server-<ver>-android-arm64.gz`.
 
