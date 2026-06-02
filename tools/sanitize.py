@@ -36,6 +36,7 @@ All randomness is supplied by the caller via env vars so the build is
 reproducible from the workflow-generated tokens.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -67,24 +68,33 @@ def _need(name, length):
     return v
 
 
-def _token_map():
-    """(old, new) byte pairs, length-preserving, longest-first."""
-    sym = _need("SYMBOL", 5)            # "frida"
-    gjl = _need("GUM_JS_LOOP", 11)      # "gum-js-loop"
-    gm = _need("GMAIN", 5)              # "gmain"
-    gd = _need("GDBUS", 5)              # "gdbus"
-    pairs = [
-        (b"gum-js-loop", gjl.encode()),
-        (b"frida", sym.encode()),
-        (b"Frida", sym.capitalize().encode()),
-        (b"FRIDA", sym.upper().encode()),
-        (b"gmain", gm.encode()),
-        (b"gdbus", gd.encode()),
-    ]
-    for old, new in pairs:
-        if len(old) != len(new):
-            sys.exit(f"[sanitize] non length-preserving token: {old!r} -> {new!r}")
-    return pairs
+DEX_MAGIC = b"dex\n"
+
+
+def _dex_ranges(path):
+    """(start, size) of embedded DEX blobs, which are left byte-for-byte intact.
+
+    A DEX has a *sorted* string-id table plus an Adler-32 + SHA-1 over its body,
+    so renaming anything inside it makes ART reject the whole DEX (and the native
+    `find_class("re/frida/HelperBackend")` then returns null)."""
+    with open(path, "rb") as f:
+        data = f.read()
+    ranges, i = [], data.find(DEX_MAGIC)
+    while i != -1:
+        ver = data[i + 4:i + 8]
+        if ver[:3].isdigit() and ver[3:4] == b"\x00" and i + 0x24 <= len(data):
+            size = int.from_bytes(data[i + 0x20:i + 0x24], "little")
+            if 0x70 <= size <= len(data) - i:
+                ranges.append((i, size))
+                i = data.find(DEX_MAGIC, i + size)
+                continue
+        i = data.find(DEX_MAGIC, i + 1)
+    return ranges
+
+
+# lowercase "frida", EXCEPT the Java/JNI/D-Bus package path: "re/frida..." and
+# "re.frida..." must stay in sync with the untouched DEX and the filesystem.
+_FRIDA_RE = re.compile(rb"(?<!re/)(?<!re\.)frida")
 
 
 def _string_ranges(path):
@@ -112,29 +122,54 @@ def _string_ranges(path):
 
 
 def patch(path):
-    tokens = _token_map()
-    counts = {old: 0 for old, _ in tokens}
-    sections = []
+    sym = _need("SYMBOL", 5)
+    frida_repl = sym.encode()
+    plain = [                              # length-preserving, longest first
+        (b"gum-js-loop", _need("GUM_JS_LOOP", 11).encode()),
+        (b"Frida", sym.capitalize().encode()),
+        (b"FRIDA", sym.upper().encode()),
+        (b"gmain", _need("GMAIN", 5).encode()),
+        (b"gdbus", _need("GDBUS", 5).encode()),
+    ]
+    for old, new in plain + [(b"frida", frida_repl)]:
+        if len(old) != len(new):
+            sys.exit(f"[sanitize] non length-preserving token: {old!r} -> {new!r}")
+
+    dex = _dex_ranges(path)
+    counts, sections = {}, []
     with open(path, "r+b") as f:
         for name, off, size in _string_ranges(path):
             sections.append(name)
             f.seek(off)
-            chunk = f.read(size)
-            new = chunk
-            for old, repl in tokens:
-                n = new.count(old)
-                if n:
-                    counts[old] += n
+            orig = f.read(size)
+            new = orig
+            for old, repl in plain:
+                c = new.count(old)
+                if c:
+                    counts[old] = counts.get(old, 0) + c
                     new = new.replace(old, repl)
-            if new != chunk:
-                if len(new) != len(chunk):
-                    sys.exit("[sanitize] length drift — aborting to avoid corruption")
+            new, c = _FRIDA_RE.subn(frida_repl, new)
+            if c:
+                counts[b"frida"] = counts.get(b"frida", 0) + c
+            if len(new) != len(orig):
+                sys.exit("[sanitize] length drift — aborting to avoid corruption")
+            # restore any embedded-DEX bytes overlapping this section
+            for ds, dl in dex:
+                a, b = max(off, ds), min(off + size, ds + dl)
+                if a < b:
+                    s, e = a - off, b - off
+                    new = new[:s] + orig[s:e] + new[e:]
+            if new != orig:
                 f.seek(off)
                 f.write(new)
+
     print(f"[sanitize] scanned sections: {', '.join(sections) or '(none!)'}")
-    for old, _ in tokens:
-        if counts[old]:
-            print(f"[sanitize] renamed {old.decode():<12} x{counts[old]}")
+    if dex:
+        print("[sanitize] preserved DEX blob(s): "
+              + ", ".join(f"{o:#x}+{s:#x}" for o, s in dex))
+    for tok in (b"frida", b"Frida", b"FRIDA", b"gum-js-loop", b"gmain", b"gdbus"):
+        if counts.get(tok):
+            print(f"[sanitize] renamed {tok.decode():<12} x{counts[tok]}")
     _strip(path)
     _verify(path)
 
