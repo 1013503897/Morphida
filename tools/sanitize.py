@@ -92,12 +92,14 @@ def _dex_ranges(path):
     return ranges
 
 
-# lowercase "frida", EXCEPT names that couple the server to an embedded blob it
-# resolves *by name* but which we do NOT rename in lockstep:
-#   - "re/frida..." / "re.frida..."   -> the untouched helper DEX + filesystem
-#   - "frida_agent_main"              -> the agent's dlsym entry point
-#   - "frida_zymbiote_..."            -> exports of the embedded zymbiote ELF blob
-_FRIDA_RE = re.compile(rb"(?<!re/)(?<!re\.)frida(?!_agent)(?!_zymbiote)")
+# lowercase "frida", EXCEPT when it is part of an identifier/path *token* — i.e.
+# followed by "-" or "_", or in the "re/frida" / "re.frida" package paths. Those
+# are names the server resolves by string against an embedded blob / the DEX /
+# the filesystem (frida_agent_main, frida_zymbiote_replacement_*, /frida-zymbiote-,
+# /data/local/tmp/frida-helper-, re/frida/HelperBackend, ...) and must stay
+# matched on both sides. Free-form "frida" (frida:rpc, libfrida, bare frida) and
+# "Frida"/"FRIDA" GType names still rename — that is the bulk of the signature.
+_FRIDA_RE = re.compile(rb"(?<!re/)(?<!re\.)frida(?![-_])")
 
 
 def _string_ranges(path):
