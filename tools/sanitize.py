@@ -17,10 +17,16 @@ names, the gumjs `Frida` global, and the `frida:rpc` wire tag are all renamed on
 *both* sides at once — while the external static fingerprint is destroyed.
 
 Implementation notes:
-  * We never let LIEF rewrite the binary; LIEF is used read-only to locate data
-    section file ranges, then we patch bytes in place (length-preserving), so the
-    ELF layout is bit-for-bit identical except for the renamed string bytes.
-  * Executable sections (.text/.plt/...) are skipped, so code is never touched.
+  * LIEF is used read-only to locate string-bearing sections (.rodata*, .dynstr);
+    we patch their bytes in place (length-preserving), so the ELF layout stays
+    bit-for-bit identical except for the renamed string bytes.
+  * Code (.text/.plt) and pointer/relocation sections (.got/.data.rel.ro/
+    .rela.*/.data) are never touched — a chance 5-byte ASCII match there would
+    corrupt a pointer, not a name.
+  * The agent .so is sanitized at embed time, so its giveaway strings (in the
+    agent's own .rodata, incl. the JS bytecode) are renamed *before* it is
+    embedded into the server's .text as a blob; the post-build server pass then
+    cleans the server's own .rodata. Both halves end up clean.
   * `frida:rpc` is handled implicitly by the `frida` token: it becomes
     `<SYMBOL>:rpc` everywhere, defeating both the "frida:rpc" and "frida" greps.
   * After byte patching we run `$STRIP --strip-all` (NDK llvm-strip) to drop the
@@ -81,30 +87,37 @@ def _token_map():
     return pairs
 
 
-def _data_ranges(path):
-    """(name, file_offset, size) for every non-exec, file-backed section."""
-    lief = _lief()
-    binary = lief.parse(path)
+def _string_ranges(path):
+    """File ranges of string-bearing sections (.rodata*, .dynstr).
+
+    These hold every giveaway *string* (literals, GType/GDBus names, thread
+    names, and — for the agent .so — the JS bytecode string table). We
+    deliberately avoid code (.text/.plt) and pointer/relocation sections
+    (.got/.data.rel.ro/.rela.*/.data), where a stray 5-byte ASCII match would
+    corrupt a pointer rather than a name."""
+    binary = _lief().parse(path)
     if binary is None:
         sys.exit(f"[sanitize] cannot parse ELF: {path}")
     ranges = []
     for s in binary.sections:
         try:
-            stype, flags = int(s.type), int(s.flags)
-            off, size = int(s.offset), int(s.size)
+            name, off, size, stype = s.name, int(s.offset), int(s.size), int(s.type)
         except Exception:
             continue
-        if size == 0 or off == 0 or stype == SHT_NOBITS or (flags & SHF_EXECINSTR):
+        if size == 0 or off == 0 or stype == SHT_NOBITS:
             continue
-        ranges.append((s.name, off, size))
+        if name == ".dynstr" or name.startswith(".rodata"):
+            ranges.append((name, off, size))
     return ranges
 
 
 def patch(path):
     tokens = _token_map()
     counts = {old: 0 for old, _ in tokens}
+    sections = []
     with open(path, "r+b") as f:
-        for _name, off, size in _data_ranges(path):
+        for name, off, size in _string_ranges(path):
+            sections.append(name)
             f.seek(off)
             chunk = f.read(size)
             new = chunk
@@ -118,6 +131,7 @@ def patch(path):
                     sys.exit("[sanitize] length drift — aborting to avoid corruption")
                 f.seek(off)
                 f.write(new)
+    print(f"[sanitize] scanned sections: {', '.join(sections) or '(none!)'}")
     for old, _ in tokens:
         if counts[old]:
             print(f"[sanitize] renamed {old.decode():<12} x{counts[old]}")
