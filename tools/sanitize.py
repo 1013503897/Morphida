@@ -92,9 +92,12 @@ def _dex_ranges(path):
     return ranges
 
 
-# lowercase "frida", EXCEPT the Java/JNI/D-Bus package path: "re/frida..." and
-# "re.frida..." must stay in sync with the untouched DEX and the filesystem.
-_FRIDA_RE = re.compile(rb"(?<!re/)(?<!re\.)frida")
+# lowercase "frida", EXCEPT names that couple the server to an embedded blob it
+# resolves *by name* but which we do NOT rename in lockstep:
+#   - "re/frida..." / "re.frida..."   -> the untouched helper DEX + filesystem
+#   - "frida_agent_main"              -> the agent's dlsym entry point
+#   - "frida_zymbiote_..."            -> exports of the embedded zymbiote ELF blob
+_FRIDA_RE = re.compile(rb"(?<!re/)(?<!re\.)frida(?!_agent)(?!_zymbiote)")
 
 
 def _string_ranges(path):

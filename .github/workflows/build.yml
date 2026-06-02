@@ -149,9 +149,9 @@ jobs:
             subprojects/frida-core/src/linux/linux-host-session.vala
           grep -q "$AGENT_PREFIX-arm64.so" subprojects/frida-core/src/linux/linux-host-session.vala
 
-          # 4) frida_agent_main -> main (the dlsym entry point; sanitize.py + strip remove the rest)
-          find subprojects/frida-core -name '*.vala' -print0 | \
-            xargs -0 sed -i 's/"frida_agent_main"/"main"/g'
+          # note: frida_agent_main (agent dlsym entry) and frida_zymbiote_* (zymbiote
+          # blob exports) are name-couplings to embedded blobs; sanitize.py preserves
+          # them on both sides rather than renaming, so they stay matched.
 
           # ---- hook our sanitize.py into embed-agent.py (linux/android branch only) ----
           cp ../tools/sanitize.py subprojects/frida-core/src/sanitize.py
