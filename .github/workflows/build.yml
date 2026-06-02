@@ -149,12 +149,12 @@ jobs:
             subprojects/frida-core/src/linux/linux-host-session.vala
           grep -q "$AGENT_PREFIX-arm64.so" subprojects/frida-core/src/linux/linux-host-session.vala
 
-          # 4) frida_agent_main symbol name (used as dlsym lookup; matches our post-build LIEF rename)
+          # 4) frida_agent_main -> main (the dlsym entry point; sanitize.py + strip remove the rest)
           find subprojects/frida-core -name '*.vala' -print0 | \
             xargs -0 sed -i 's/"frida_agent_main"/"main"/g'
 
-          # ---- hook our post-agent-patch.py into embed-agent.py (linux/android branch only) ----
-          cp ../tools/post-agent-patch.py subprojects/frida-core/src/post-agent-patch.py
+          # ---- hook our sanitize.py into embed-agent.py (linux/android branch only) ----
+          cp ../tools/sanitize.py subprojects/frida-core/src/sanitize.py
           python3 - <<'PY'
           import pathlib, sys, textwrap
           p = pathlib.Path("subprojects/frida-core/src/embed-agent.py")
@@ -175,9 +175,9 @@ jobs:
                           if agent is not None:
                               shutil.copy(agent, embedded_agent)
                               import subprocess as _sp, pathlib as _pl
-                              _script = _pl.Path(__file__).resolve().parent / \"post-agent-patch.py\"
-                              print(f\"[embed-agent] post-agent-patch on {embedded_agent}\")
-                              _sp.run([\"python3\", str(_script), str(embedded_agent)], check=True)
+                              _script = _pl.Path(__file__).resolve().parent / \"sanitize.py\"
+                              print(f\"[embed-agent] sanitize agent {embedded_agent}\")
+                              _sp.run([\"python3\", str(_script), \"patch\", str(embedded_agent)], check=True)
                           else:
                               embedded_agent.write_bytes(b\"\")
                           embedded_assets += [embedded_agent]""")
@@ -190,10 +190,23 @@ jobs:
       - name: build android-arm64
         run: |
           export ANDROID_NDK_ROOT=${{ steps.ndk.outputs.ndk-path }}
+          export STRIP="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
           mkdir build-android-arm64
           cd build-android-arm64
           ../frida/configure --host=android-arm64
           make
+
+      - name: sanitize + strip server
+        run: |
+          export ANDROID_NDK_ROOT=${{ steps.ndk.outputs.ndk-path }}
+          export STRIP="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          server="build-android-arm64/subprojects/frida-core/server/frida-server"
+          python3 tools/sanitize.py patch "$server"
+
+      - name: strings audit (fail on residual signatures)
+        run: |
+          python3 tools/sanitize.py report \
+            build-android-arm64/subprojects/frida-core/server/frida-server
 
       - name: package
         run: |
@@ -213,16 +226,19 @@ jobs:
           asset="frida-server-$ver-android-arm64.gz"
 
           notes=$(cat <<EOF
-          frida $ver + per-build randomized strings.
+          frida $ver — per-build polymorphic anti-detection build.
 
           - prgname:    \`$PRG\`
           - memfd:      \`$MEMFD\`
           - agent prefix: \`$AGENT_PREFIX\`
-          - symbol prefix (replaces "frida"/"FRIDA"): \`$SYMBOL\`
+          - symbol prefix (frida/Frida/FRIDA -> ...): \`$SYMBOL\`
           - thread names: gum-js-loop=\`$GUM_JS_LOOP\`, gmain=\`$GMAIN\`, gdbus=\`$GDBUS\`
 
-          rpc magic: 3-layer base64 (literal \`V201S2NGcEhSVFpqYmtKcQ==\`).
-          payload-base: relaxed to allow exec-only libstagefright.so segment.
+          server + agent are run through \`tools/sanitize.py\`: consistent,
+          length-preserving rename of giveaway tokens across all data sections
+          (incl. the \`frida:rpc\` wire tag and the embedded JS), then
+          \`llvm-strip --strip-all\`, then a strings-audit gate. payload-base
+          relaxed to allow the exec-only libstagefright.so segment.
           EOF
           )
 
