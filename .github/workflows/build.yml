@@ -97,11 +97,13 @@ jobs:
           PRG=$(tr -dc 'a-z' < /dev/urandom | head -c 16)
           MEMFD=$(tr -dc 'a-z' < /dev/urandom | head -c 12)
           AGENT_PREFIX=$(tr -dc 'a-z' < /dev/urandom | head -c 10)
-          # length-preserving (rewritten in compiled .so via sed -b, must match)
+          # length-preserving (rewritten in compiled binaries via sanitize.py)
           SYMBOL=$(tr -dc 'a-z' < /dev/urandom | head -c 5)            # "frida"  -> 5
           GUM_JS_LOOP=$(tr -dc 'a-z' < /dev/urandom | head -c 11)      # "gum-js-loop" -> 11
           GMAIN=$(tr -dc 'a-z' < /dev/urandom | head -c 5)              # "gmain"  -> 5
           GDBUS=$(tr -dc 'a-z' < /dev/urandom | head -c 5)              # "gdbus"  -> 5
+          LINJECTOR=$(tr -dc 'a-z' < /dev/urandom | head -c 9)          # "linjector" -> 9
+          LIBFRIDA=$(tr -dc 'A-Z' < /dev/urandom | head -c 8)           # "LIBFRIDA" -> 8
           {
             echo "PRG=$PRG"
             echo "MEMFD=$MEMFD"
@@ -110,8 +112,10 @@ jobs:
             echo "GUM_JS_LOOP=$GUM_JS_LOOP"
             echo "GMAIN=$GMAIN"
             echo "GDBUS=$GDBUS"
+            echo "LINJECTOR=$LINJECTOR"
+            echo "LIBFRIDA=$LIBFRIDA"
           } >> "$GITHUB_ENV"
-          echo "tokens: prg=$PRG memfd=$MEMFD agent=$AGENT_PREFIX symbol=$SYMBOL gum_loop=$GUM_JS_LOOP gmain=$GMAIN gdbus=$GDBUS"
+          echo "tokens: prg=$PRG memfd=$MEMFD agent=$AGENT_PREFIX symbol=$SYMBOL gum_loop=$GUM_JS_LOOP gmain=$GMAIN gdbus=$GDBUS linjector=$LINJECTOR libfrida=$LIBFRIDA"
 
       - name: clone frida + apply patches + sed renames
         run: |
@@ -233,12 +237,14 @@ jobs:
           - agent prefix: \`$AGENT_PREFIX\`
           - symbol prefix (frida/Frida/FRIDA -> ...): \`$SYMBOL\`
           - thread names: gum-js-loop=\`$GUM_JS_LOOP\`, gmain=\`$GMAIN\`, gdbus=\`$GDBUS\`
+          - linjector / LIBFRIDA: \`$LINJECTOR\` / \`$LIBFRIDA\`
 
-          server + agent are run through \`tools/sanitize.py\`: consistent,
-          length-preserving rename of giveaway tokens across all data sections
-          (incl. the \`frida:rpc\` wire tag and the embedded JS), then
-          \`llvm-strip --strip-all\`, then a strings-audit gate. payload-base
-          relaxed to allow the exec-only libstagefright.so segment.
+          server + agent go through \`tools/sanitize.py\`: consistent,
+          length-preserving rename across outer + nested ELF string sections
+          (paths like frida-core/helper, thread names, GType prefixes), then
+          \`llvm-strip --strip-all\`, then a strings-audit gate (hard-zero on
+          gmain/gdbus/linjector/path fingerprints; \`frida:rpc\` kept for stock
+          client wire compat). payload-base patch for exec-only mappings.
           EOF
           )
 
