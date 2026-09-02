@@ -1,13 +1,25 @@
 # Morphida
 
-> Polymorphic, anti-detection **frida-server** for Android arm64.
-> Tracks upstream Frida releases; every build morphs its static fingerprint.
+**A rebuilt / 魔改 [Frida](https://frida.re) `frida-server` for Android arm64.**
+Follows official Frida release tags. Same client, same version number, different binary.
 
-**English** | [中文](#中文)
+**English** | [简体中文](#中文)
 
 [![Latest Release](https://img.shields.io/github/v/release/1013503897/Morphida?label=release)](https://github.com/1013503897/Morphida/releases/latest)
+[![Frida](https://img.shields.io/badge/based%20on-official%20Frida-ef4444)](https://github.com/frida/frida/releases)
 
----
+## vs official Frida
+
+| | Official Frida | Morphida |
+| --- | --- | --- |
+| What it is | `frida-server` from [frida.re](https://frida.re) | The same server, rebuilt from the matching upstream tag |
+| Client | `frida` / `frida-tools` | **Same** — `pip install frida==<ver>` |
+| Protocol | stock | stock (`frida:rpc` and the usual client/server contract) |
+| Version | `17.17.0` | `17.17.0-r…` — the prefix **is** the Frida tag |
+| Artifact | `frida-server` | `frida-server-<ver>-android-arm64.gz` |
+| Extra | — | Per-build morph of static fingerprints; daily CI tracks new Frida releases |
+
+This is **not** a new instrumentation framework. If you already use Frida, you keep using the official client against this server.
 
 ## What it is
 
@@ -73,8 +85,6 @@ tools/frida-connect.sh -s <adb-serial>
 
 ### Hardened listen (random port + token)
 
-Defeats cheap scans for fixed `27042` / bare D-Bus handshakes:
-
 ```sh
 tools/run-server.sh -s <adb-serial> -b /data/local/tmp/art-runtime-srv
 # then: frida -H 127.0.0.1:<port> --token <token> ...
@@ -131,14 +141,26 @@ Inspired by [Ylarod/Florida](https://github.com/Ylarod/Florida) and the wider an
 
 # 中文
 
-> 面向 Android arm64 的**多态、反检测 frida-server**。
-> 跟随上游 Frida 正式版；每次构建都会 morph 静态指纹。
+**官方 [Frida](https://frida.re) 的 Android arm64 `frida-server` 魔改 / 重编版。**
+跟随上游正式 tag。还是那套 client、同一个版本号，只换了设备上的 server 二进制。
 
 [English](#morphida) | **中文**
 
 [![Latest Release](https://img.shields.io/github/v/release/1013503897/Morphida?label=release)](https://github.com/1013503897/Morphida/releases/latest)
+[![Frida](https://img.shields.io/badge/based%20on-official%20Frida-ef4444)](https://github.com/frida/frida/releases)
 
----
+## 和官方 Frida 的关系
+
+| | 官方 Frida | Morphida |
+| --- | --- | --- |
+| 是什么 | [frida.re](https://frida.re) 的 `frida-server` | 用同一个上游 tag 重新编出来的同一个 server |
+| Client | `frida` / `frida-tools` | **不换** — `pip install frida==<版本>` |
+| 协议 | 官方 | 官方（含 `frida:rpc` 等客户端约定） |
+| 版本 | `17.17.0` | `17.17.0-r…` — **前缀就是** Frida tag |
+| 产物 | `frida-server` | `frida-server-<版本>-android-arm64.gz` |
+| 额外 | — | 每次构建 morph 静态指纹；日构跟上游新版 |
+
+这**不是**一套新的插桩框架。你已经会用 Frida，就继续用官方 client 对这个 server。
 
 ## 是什么
 
