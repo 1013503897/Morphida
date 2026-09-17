@@ -90,37 +90,6 @@ tools/run-server.sh -s <adb-serial> -b /data/local/tmp/art-runtime-srv
 # then: frida -H 127.0.0.1:<port> --token <token> ...
 ```
 
-## How a build works
-
-```text
-Frida release tag
-    → clone + submodules
-    → git am patches/*
-    → source-level sed (prgname / memfd / agent prefix)
-    → compile android-arm64 (agent sanitized at embed time)
-    → sanitize + strip server
-    → strings audit (CI gate)
-    → GitHub Release asset
-```
-
-| Path | Role |
-| --- | --- |
-| `.github/workflows/build.yml` | daily / dispatch / push CI |
-| `patches/` | minimal source patches |
-| `tools/sanitize.py` | binary morph + report gate |
-| `tools/frida-connect.sh` | version assert + start + forward |
-| `tools/run-server.sh` | random port + auth token |
-
-## What it is not
-
-Morphida hardens **static and cheap runtime fingerprints** of `frida-server`. It does **not**:
-
-- guarantee invisibility against integrity checks (libc/libart memory vs disk, inline-hook probes);
-- remove every `frida` substring — stock CLI needs `frida:rpc`, and some `frida_*` / `re.frida` name-couplings stay for correctness;
-- replace app-specific detection bypass (that is still target-side work).
-
-Prefer **spawn** (`-f`) over attach when ptrace is unstable on the device.
-
 ## References
 
 Detection / community prior art:
@@ -226,37 +195,6 @@ tools/frida-connect.sh -s <adb-serial>
 tools/run-server.sh -s <adb-serial> -b /data/local/tmp/art-runtime-srv
 # frida -H 127.0.0.1:<port> --token <token> ...
 ```
-
-## 构建流程（简图）
-
-```text
-Frida release tag
-    → clone + submodules
-    → git am patches/*
-    → 源码级 sed（prgname / memfd / agent 前缀）
-    → 编 android-arm64（embed 时清洗 agent）
-    → sanitize + strip server
-    → 字符串审计（CI 门禁）
-    → GitHub Release
-```
-
-| 路径 | 作用 |
-| --- | --- |
-| `.github/workflows/build.yml` | 日构 / 手动 / 推送 CI |
-| `patches/` | 最小源码补丁 |
-| `tools/sanitize.py` | 二进制 morph + report 门禁 |
-| `tools/frida-connect.sh` | 版本断言 + 启动 + forward |
-| `tools/run-server.sh` | 随机端口 + auth token |
-
-## 明确做不到的
-
-Morphida 针对的是 `frida-server` 的**静态特征与廉价运行时指纹**，并不是：
-
-- 对 libc/libart「内存 vs 磁盘」完整性、inline-hook 探测的隐身保证；
-- 清掉二进制里每一个 `frida` 子串（官方 client 需要 `frida:rpc`，部分 `frida_*` / `re.frida` 为正确性保留）；
-- 替代「按 app 拆检测点」的目标侧对抗。
-
-设备 ptrace 不稳时，业务优先用 **spawn**（`-f`）。
 
 ## 参考
 
